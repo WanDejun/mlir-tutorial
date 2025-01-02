@@ -1,0 +1,12 @@
+{
+    "files.exclude": {
+        "**/.ninja*": true,
+        "**/*.ninja": true,
+        "**/*.cmake": true
+    },
+    "search.exclude": {
+        "**/.ninja*": true,
+        "**/*.ninja": true,
+        "**/*.cmake": true
+    }
+}

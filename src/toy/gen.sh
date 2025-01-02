@@ -1,0 +1,1 @@
+mlir-tblgen -gen-rewriters ToyCombine.td -I /home/mowind/program/llvm-project/mlir/include/ -I /home/mowind/dev/mlir/tutorial/inc/ > ToyCombine.inc

@@ -1,0 +1,6 @@
+build
+
+**/*.inc
+
+temp
+bin
