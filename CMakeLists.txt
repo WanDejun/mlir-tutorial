@@ -43,9 +43,11 @@ add_executable(toy
   )
 
 target_link_libraries(toy
+  MLIRAnalysis
+  MLIRCallInterfaces
+  MLIRCastInterfaces
   MLIRSupport
   LLVMSupport
-  MLIRAnalysis
   MLIRFunctionInterfaces
   MLIRIR
   MLIRParser

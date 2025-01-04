@@ -16,16 +16,23 @@
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Dialect.h"
+#include "mlir/IR/DialectInterface.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/InliningUtils.h"
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
+
 #include <algorithm>
 #include <string>
 
@@ -33,6 +40,65 @@ using namespace mlir;
 using namespace mlir::toy;
 
 #include "toy/Dialect.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+// ToyInlinerInterface
+//===----------------------------------------------------------------------===//
+/// This class defines the interface for handling inlining with Toy
+/// operations.
+struct ToyInlinerInterface : public DialectInlinerInterface {
+    using DialectInlinerInterface::DialectInlinerInterface;
+
+    //===--------------------------------------------------------------------===//
+    // Analysis Hooks
+    //===--------------------------------------------------------------------===//
+
+    /// All call operations within toy can be inlined.
+    bool isLegalToInline(Operation* call, Operation* callable, bool wouldBeCloned)
+        const final {
+        return true;
+    }
+
+    /// All operations within toy can be inlined.
+    bool isLegalToInline(Operation*, Region*, bool, IRMapping&) const final {
+        return true;
+    }
+
+    // All functions within toy can be inlined.
+    bool isLegalToInline(Region*, Region*, bool, IRMapping&) const final {
+        return true;
+    }
+
+    //===--------------------------------------------------------------------===//
+    // Transformation Hooks
+    //===--------------------------------------------------------------------===//
+
+    /// Handle the given inlined terminator(toy.return) by replacing it with a new
+    /// operation as necessary.
+    void handleTerminator(Operation* op, ValueRange valuesToRepl) const final {
+        // Only "toy.return" needs to be handled here.
+        auto returnOp = cast<ReturnOp>(op);
+
+        // Replace the values directly with the return operands.
+        assert(returnOp.getNumOperands() == valuesToRepl.size());
+        for (const auto& it : llvm::enumerate(returnOp.getOperands()))
+            valuesToRepl[it.index()].replaceAllUsesWith(it.value());
+    }
+
+    /// Attempts to materialize a conversion for a type mismatch between a call
+    /// from this dialect, and a callable region. This method should generate an
+    /// operation that takes 'input' as the only operand, and produces a single
+    /// result of 'resultType'. If a conversion can not be generated, nullptr
+    /// should be returned.
+    Operation* materializeCallConversion(
+        OpBuilder& builder,
+        Value      input,
+        Type       resultType,
+        Location   conversionLoc) const final {
+        return builder.create<CastOp>(conversionLoc, resultType, input);
+    }
+};
+
 
 //===----------------------------------------------------------------------===//
 // ToyDialect
@@ -45,7 +111,9 @@ void ToyDialect::initialize() {
 #define GET_OP_LIST
 #include "toy/Ops.cpp.inc"
         >();
+    addInterface<ToyInlinerInterface>();
 }
+
 
 //===----------------------------------------------------------------------===//
 // Toy Operations
@@ -229,6 +297,7 @@ void FuncOp::print(mlir::OpAsmPrinter& p) {
         getResAttrsAttrName());
 }
 
+
 //===----------------------------------------------------------------------===//
 // GenericCallOp
 //===----------------------------------------------------------------------===//
@@ -242,6 +311,30 @@ void GenericCallOp::build(
     state.addTypes(UnrankedTensorType::get(builder.getF64Type()));
     state.addOperands(arguments);
     state.addAttribute("callee", mlir::SymbolRefAttr::get(builder.getContext(), callee));
+}
+
+/// Return the callee of the generic call operation, this is required by the
+/// call interface.
+CallInterfaceCallable GenericCallOp::getCallableForCallee() {
+    return (*this)->getAttrOfType<SymbolRefAttr>("callee");
+}
+
+/// Set the callee for the generic call operation, this is required by the call
+/// interface.
+void GenericCallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
+    (*this)->setAttr("callee", callee.get<SymbolRefAttr>());
+}
+
+/// Get the argument operands to the called function, this is required by the
+/// call interface.
+Operation::operand_range GenericCallOp::getArgOperands() {
+    return getInputs();
+}
+
+/// Get the argument operands to the called function as a mutable range, this is
+/// required by the call interface.
+MutableOperandRange GenericCallOp::getArgOperandsMutable() {
+    return getInputsMutable();
 }
 
 //===----------------------------------------------------------------------===//
@@ -325,6 +418,21 @@ llvm::LogicalResult TransposeOp::verify() {
         return emitError() << "expected result shape to be a transpose of the input";
     }
     return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// CastOp
+//===----------------------------------------------------------------------===//
+bool CastOp::areCastCompatible(::mlir::TypeRange inputs, ::mlir::TypeRange outputs) {
+    if (inputs.size() != 1 || outputs.size() != 1)
+        return false;
+
+    TensorType input = dyn_cast<TensorType>(inputs.front());
+    TensorType output = dyn_cast<TensorType>(outputs.front());
+    if (!input || !output || input.getElementType() != output.getElementType())
+        return false;
+
+    return !input.hasRank() || !output.hasRank() || input == output;
 }
 
 //===----------------------------------------------------------------------===//

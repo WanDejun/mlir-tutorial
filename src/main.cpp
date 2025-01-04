@@ -34,12 +34,11 @@
 #include <memory>
 #include <string>
 #include <system_error>
-#include <utility>
 
 using namespace toy;
 namespace cl = llvm::cl;
 
-std::string inputFilename = "/home/mowind/dev/mlir/tutorial/test/test.mlir";
+std::string inputFilename = "/home/mowind/dev/mlir/tutorial/test/test.toy";
 
 int dumpMLIR() {
     mlir::MLIRContext context;
@@ -63,6 +62,7 @@ int dumpMLIR() {
 
     // Add a run of the canonicalizer to optimize the mlir module.
     pm.addNestedPass<mlir::toy::FuncOp>(mlir::createCanonicalizerPass());
+    // pm.addPass(mlir::createInlinerPass());
     if (mlir::failed(pm.run(*module)))
         return 4;
 

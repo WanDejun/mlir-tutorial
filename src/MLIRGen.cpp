@@ -174,6 +174,8 @@ private:
                 function.getFunctionType().getInputs(), getType(VarType{})));
         }
 
+        if (funcAST.getProto()->getName() != "main")
+            function.setPrivate();
         return function;
     }
 
