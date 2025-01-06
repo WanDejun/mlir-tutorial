@@ -14,6 +14,7 @@
 #include "Lexer.h"
 #include "MLIRGen.h"
 #include "Parser.h"
+#include "Passes.h"
 #include "toy/Dialect.h"
 
 #include "mlir/IR/AsmState.h"
@@ -31,6 +32,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
+
 #include <memory>
 #include <string>
 #include <system_error>
@@ -61,8 +63,18 @@ int dumpMLIR() {
     mlir::PassManager pm(module.get()->getName());
 
     // Add a run of the canonicalizer to optimize the mlir module.
+    // Pattern And Rewriter
     pm.addNestedPass<mlir::toy::FuncOp>(mlir::createCanonicalizerPass());
-    // pm.addPass(mlir::createInlinerPass());
+
+    // Inliner Passer
+    pm.addPass(mlir::createInlinerPass());
+
+    mlir::OpPassManager& optPM = pm.nest<mlir::toy::FuncOp>();
+    optPM.addPass(mlir::toy::createShapeInferencePass());  // ShapeInferencePass
+
+    // remove castOp if input & output has same type
+    optPM.addPass(mlir::createCSEPass());
+
     if (mlir::failed(pm.run(*module)))
         return 4;
 

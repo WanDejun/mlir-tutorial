@@ -40,6 +40,7 @@ add_executable(toy
   src/MLIRGen.cpp
   src/toy/ToyCombine.cpp
   src/toy/Dialect.cpp
+  src/toy/ShapeInferencePasser.cpp
   )
 
 target_link_libraries(toy

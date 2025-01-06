@@ -30,10 +30,12 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 
 using namespace mlir;
@@ -259,6 +261,10 @@ void AddOp::print(mlir::OpAsmPrinter& p) {
     printBinaryOp(p, *this);
 }
 
+void AddOp::inferShapes() {
+    getResult().setType(getLhs().getType());
+}
+
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
@@ -358,10 +364,14 @@ void MulOp::print(mlir::OpAsmPrinter& p) {
     printBinaryOp(p, *this);
 }
 
+void MulOp::inferShapes() {
+    getResult().setType(getLhs().getType());
+}
+
+
 //===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
-
 llvm::LogicalResult ReturnOp::verify() {
     // We know that the parent operation is a function, because of the 'HasParent'
     // trait attached to the operation definition.
@@ -397,7 +407,6 @@ llvm::LogicalResult ReturnOp::verify() {
 //===----------------------------------------------------------------------===//
 // TransposeOp
 //===----------------------------------------------------------------------===//
-
 void TransposeOp::build(
     mlir::OpBuilder&      builder,
     mlir::OperationState& state,
@@ -420,6 +429,12 @@ llvm::LogicalResult TransposeOp::verify() {
     return mlir::success();
 }
 
+void TransposeOp::inferShapes() {
+    auto                          inputType = getInput().getType();
+    llvm::SmallVector<int64_t, 2> resultType(llvm::reverse(inputType.getShape()));
+    getResult().setType(RankedTensorType::get(resultType, inputType.getElementType()));
+}
+
 //===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
@@ -433,6 +448,10 @@ bool CastOp::areCastCompatible(::mlir::TypeRange inputs, ::mlir::TypeRange outpu
         return false;
 
     return !input.hasRank() || !output.hasRank() || input == output;
+}
+
+void CastOp::inferShapes() {
+    getResult().setType(getInput().getType());
 }
 
 //===----------------------------------------------------------------------===//
