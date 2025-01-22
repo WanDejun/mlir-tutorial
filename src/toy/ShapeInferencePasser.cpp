@@ -12,7 +12,7 @@
 
 #include "Passes.h"
 #include "toy/Dialect.h"
-#include "toy/ShapeInferenceOpInterfaces.h"
+#include "toy/ShapeInferenceInterfaces.h"
 
 #include <memory>
 
@@ -21,6 +21,10 @@ using namespace toy;
 
 #include "toy/ShapeInferenceOpInterfaces.cpp.inc"
 
+
+// passer to do the Shape inference.
+// walk in the toy::FuncOp find the operation with dynamic shape result but static shape
+// input. Reshape this operation' result.
 namespace {
 struct ShapeInferencePass
     : public PassWrapper<ShapeInferencePass, OperationPass<toy::FuncOp>> {

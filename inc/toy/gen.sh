@@ -4,5 +4,7 @@ mlir-tblgen -gen-dialect-decls Ops.td > Dialect.h.inc -I /home/mowind/program/ll
 mlir-tblgen -gen-dialect-defs Ops.td > Dialect.cpp.inc -I /home/mowind/program/llvm-project/mlir/include -I /home/mowind/dev/mlir/tutorial/inc/
 
 
-mlir-tblgen -gen-op-interface-defs ShapeInferenceOpInterfaces.td -I /home/mowind/program/llvm-project/mlir/include/ > ShapeInferenceOpInterfaces.cpp.inc
-mlir-tblgen -gen-op-interface-decls ShapeInferenceOpInterfaces.td -I /home/mowind/program/llvm-project/mlir/include/ > ShapeInferenceOpInterfaces.h.inc
+mlir-tblgen -gen-op-interface-defs ShapeInferenceOpInterface.td -I /home/mowind/program/llvm-project/mlir/include/ > ShapeInferenceOpInterface.cpp.inc
+mlir-tblgen -gen-op-interface-decls ShapeInferenceOpInterface.td -I /home/mowind/program/llvm-project/mlir/include/ > ShapeInferenceOpInterface.h.inc
+
+mlir-tblgen -gen-rewriters ToyCombine.td -I /home/mowind/program/llvm-project/mlir/include/ -I /home/mowind/dev/mlir/tutorial/inc/ > ToyCombine.inc

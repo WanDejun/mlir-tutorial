@@ -71,8 +71,7 @@ int dumpMLIR() {
 
     mlir::OpPassManager& optPM = pm.nest<mlir::toy::FuncOp>();
     optPM.addPass(mlir::toy::createShapeInferencePass());  // ShapeInferencePass
-
-    // remove castOp if input & output has same type
+    // Common Subexpression Elimination.
     optPM.addPass(mlir::createCSEPass());
 
     if (mlir::failed(pm.run(*module)))
