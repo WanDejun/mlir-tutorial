@@ -8,7 +8,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug",
-            "program": "${workspaceFolder}/bin/toy",
+            "program": "${workspaceFolder}/bin/Toy",
             "args": [],
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "cmake"

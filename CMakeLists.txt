@@ -61,6 +61,7 @@ add_executable(Toy
   src/toy/Dialect.cpp
   src/toy/ShapeInferencePasser.cpp
   src/toy/ToyCombine.cpp
+  src/LowerToAffineLoops.cpp
 )
 
 # Add Dependencies on TableGen Targets

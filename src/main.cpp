@@ -17,11 +17,14 @@
 #include "Passes.h"
 #include "toy/Dialect.h"
 
+#include "mlir/Dialect/Affine/Passes.h"
+#include "mlir/Dialect/Func/Extensions/AllExtensions.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/InitAllDialects.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
@@ -43,7 +46,10 @@ namespace cl = llvm::cl;
 std::string inputFilename = "/home/mowind/dev/mlir/tutorial/test/test.toy";
 
 int dumpMLIR() {
-    mlir::MLIRContext context;
+    mlir::DialectRegistry registry;
+    mlir::func::registerAllExtensions(registry);
+
+    mlir::MLIRContext context(registry);
     context.getOrLoadDialect<mlir::toy::ToyDialect>();
 
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
@@ -62,17 +68,25 @@ int dumpMLIR() {
 
     mlir::PassManager pm(module.get()->getName());
 
-    // Add a run of the canonicalizer to optimize the mlir module.
-    // Pattern And Rewriter
-    pm.addNestedPass<mlir::toy::FuncOp>(mlir::createCanonicalizerPass());
+    do {  // Inliner Passer
+        pm.addPass(mlir::createInlinerPass());
 
-    // Inliner Passer
-    pm.addPass(mlir::createInlinerPass());
+        mlir::OpPassManager& optPM = pm.nest<mlir::toy::FuncOp>();
+        optPM.addPass(mlir::toy::createShapeInferencePass());  // ShapeInferencePass
+        optPM.addPass(mlir::createCanonicalizerPass());
+        // Common Subexpression Elimination.
+        optPM.addPass(mlir::createCSEPass());
+    } while (0);
 
-    mlir::OpPassManager& optPM = pm.nest<mlir::toy::FuncOp>();
-    optPM.addPass(mlir::toy::createShapeInferencePass());  // ShapeInferencePass
-    // Common Subexpression Elimination.
-    optPM.addPass(mlir::createCSEPass());
+    do {
+        // Partially lower the toy dialect.
+        pm.addPass(mlir::toy::createLowerToAffinePass());
+
+        // Add a few cleanups post lowering.
+        mlir::OpPassManager& optPM = pm.nest<mlir::func::FuncOp>();
+        optPM.addPass(mlir::createCanonicalizerPass());
+        optPM.addPass(mlir::createCSEPass());
+    } while (0);
 
     if (mlir::failed(pm.run(*module)))
         return 4;
