@@ -61,7 +61,8 @@ add_executable(Toy
   src/toy/Dialect.cpp
   src/toy/ShapeInferencePasser.cpp
   src/toy/ToyCombine.cpp
-  src/LowerToAffineLoops.cpp
+  src/toy/LowerToAffineLoops.cpp
+  src/toy/LowerToLLVM.cpp
 )
 
 # Add Dependencies on TableGen Targets
@@ -80,14 +81,21 @@ target_link_libraries(Toy
     ${dialect_libs}
     ${extension_libs}
     MLIRAnalysis
+    MLIRBuiltinToLLVMIRTranslation
     MLIRCallInterfaces
     MLIRCastInterfaces
+    MLIRExecutionEngine
     MLIRFunctionInterfaces
     MLIRIR
+    MLIRLLVMCommonConversion
+    MLIRLLVMDialect
+    MLIRLLVMToLLVMIRTranslation
+    MLIRMemRefDialect
     MLIRParser
     MLIRPass
     MLIRSideEffectInterfaces
     MLIRSupport
+    MLIRTargetLLVMIRExport
     MLIRTransforms
 )
 

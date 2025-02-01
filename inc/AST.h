@@ -47,7 +47,7 @@ public:
 
   ExprAST(ExprASTKind kind, Location location)
       : kind(kind), location(std::move(location)) {}
-  virtual ~ExprAST() = default;
+  // virtual ~ExprAST() = default;
 
   ExprASTKind getKind() const { return kind; }
 

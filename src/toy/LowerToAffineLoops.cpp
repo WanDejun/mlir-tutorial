@@ -97,6 +97,7 @@ static void lowerOpToLoops(
 //       Lowering Pattern Rewriter
 // =========================================
 
+namespace {
 // ConversionPattern to lowering toy.transposeOp.
 struct TransposeOpLowering : public ConversionPattern {
 public:
@@ -273,6 +274,7 @@ class ReturnOpLowering : public OpConversionPattern<toy::ReturnOp> {
         return success();
     }
 };
+}  // namespace
 
 
 // =========================================
