@@ -7,8 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-g -Wall -fno-rtti)
 
 # Specify Clang/Clang++
-set(CMAKE_C_COMPILER "/home/mowind/program/llvm-project/build/bin/clang")
-set(CMAKE_CXX_COMPILER "/home/mowind/program/llvm-project/build/bin/clang++")
+set(CMAKE_C_COMPILER "/usr/bin/cc")
+set(CMAKE_CXX_COMPILER "/usr/bin/c++")
+set(CMAKE_LINKER "lld")
+set(CMAKE_BUILD_TYPE Debug)
 
 # Enable compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

@@ -4,7 +4,7 @@
 - Toy Dialect accecpt Tensor type. But tensor can not be presented by computer. So we have to lowering it down to memery.
 
 ### 0.TODO
-- [ ] 1. different between `OpConversionPattern` and `ConversionPattern`;
+- [x] 1. different between `OpConversionPattern` and `ConversionPattern`;
 - [x] 2. what is `OpAdaptor` and how does `adaptor.getOperands()` works;
 - [x] 3. what is `mlir::func::registerAllExtensions(registry)` mean;
 
