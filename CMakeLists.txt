@@ -4,7 +4,7 @@ project(MLIRTutorial LANGUAGES CXX)
 # Compiler and Flags
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_compile_options(-g -Wall -fno-rtti)
+add_compile_options(-g -Wall -fno-rtti -Wno-dangling-assignment-gsl)
 
 # Specify Clang/Clang++
 set(CMAKE_C_COMPILER "/usr/bin/cc")
@@ -104,5 +104,5 @@ target_link_libraries(Toy
 add_custom_target(run
   COMMAND ninja -j6
   COMMAND cd ${CMAKE_BINARY_DIR}/../bin 
-  COMMAND ./Toy
+  COMMAND ./Toy ../test/Ch7.toy
 )

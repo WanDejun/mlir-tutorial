@@ -1,0 +1,36 @@
+Module:
+  Struct {
+    VarDecl a<> @test/Ch7.toy:2:3
+    VarDecl b<> @test/Ch7.toy:3:3
+  } // struct declare
+  Function 
+    Proto 'multiply_transpose' @test/Ch7.toy:6:1
+    Params: [value]
+    Block {
+      Return
+        BinOp: * @test/Ch7.toy:7:31
+          Call 'transpose' [ @test/Ch7.toy:7:10
+            BinOp: . @test/Ch7.toy:7:26
+              var: value @test/Ch7.toy:7:20
+              var: a @test/Ch7.toy:7:26
+          ]
+          Call 'transpose' [ @test/Ch7.toy:7:31
+            BinOp: . @test/Ch7.toy:7:47
+              var: value @test/Ch7.toy:7:41
+              var: b @test/Ch7.toy:7:47
+          ]
+    } // Block
+  Function 
+    Proto 'main' @test/Ch7.toy:10:1
+    Params: []
+    Block {
+      VarDecl a<Struct> @test/Ch7.toy:11:3
+        {
+          Literal: <2, 3>[ <3>[ 1.000000e+00, 2.000000e+00, 3.000000e+00], <3>[ 4.000000e+00, 5.000000e+00, 6.000000e+00]] @test/Ch7.toy:11:15
+          Literal: <2, 3>[ <3>[ 1.000000e+00, 2.000000e+00, 3.000000e+00], <3>[ 7.000000e+00, 8.000000e+00, 9.000000e+00]] @test/Ch7.toy:11:39
+        }
+      VarDecl c<> @test/Ch7.toy:15:3
+        Call 'multiply_transpose' [ @test/Ch7.toy:15:11
+          var: a @test/Ch7.toy:15:30
+        ]
+    } // Block

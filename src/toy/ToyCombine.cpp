@@ -11,7 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
 #include "toy/Dialect.h"
@@ -22,6 +24,22 @@ namespace {
 /// Include the patterns defined in the Declarative Rewrite framework.
 #include "ToyCombine.inc"
 }  // namespace
+
+
+// Toy Dialect constant fold
+OpFoldResult ConstantOp::fold(ConstantOp::FoldAdaptor adaptor) {
+    return getValue();
+}
+OpFoldResult StructConstantOp::fold(StructConstantOp::FoldAdaptor adaptor) {
+    return getValue();
+}
+OpFoldResult StructAccessOp::fold(StructAccessOp::FoldAdaptor adapter) {
+    auto values = dyn_cast_if_present<ArrayAttr>(adapter.getInput());
+    if (!values) return nullptr;
+
+    auto index = adapter.getIndexAttr();
+    return values[index.getInt()];
+}
 
 /// This is an example of a c++ rewrite pattern for the TransposeOp. It
 /// optimizes the following scenario: transpose(transpose(x)) -> x

@@ -15,12 +15,17 @@
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/DialectInterface.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/TypeSupport.h"
+#include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Interfaces/CallInterfaces.h"
@@ -29,12 +34,15 @@
 #include "mlir/Transforms/InliningUtils.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -114,8 +122,65 @@ void ToyDialect::initialize() {
 #include "toy/Ops.cpp.inc"
         >();
     addInterface<ToyInlinerInterface>();
+    addTypes<StructType>();
 }
 
+
+Operation* mlir::toy::ToyDialect::materializeConstant(
+    mlir::OpBuilder& builder,
+    mlir::Attribute  value,
+    mlir::Type       type,
+    mlir::Location   loc) {
+    if (llvm::isa<StructType>(type))
+        return builder.create<StructConstantOp>(
+            loc, type, llvm::cast<mlir::ArrayAttr>(value));
+
+    return builder.create<ConstantOp>(
+        loc, type, llvm::cast<mlir::DenseElementsAttr>(value));
+}
+
+
+// parse Type in .mlir files. Include [Struct, Tensor].
+Type ToyDialect::parseType(mlir::DialectAsmParser& parser) const {
+    // parser a struct type in the following form:
+    //      struct-type ::= `struct` `< ` type ( `,` type)* `>`
+
+    if (parser.parseKeyword("struct") || parser.parseLess())
+        return Type();
+
+    SmallVector<Type, 1> elementTypes;
+    do {
+        SMLoc      typeLoc = parser.getCurrentLocation();
+        mlir::Type elementType;
+        if (parser.parseType(elementType))
+            return nullptr;
+
+        if (!llvm::isa<TensorType, StructType>(elementType)) {
+            parser.emitError(
+                typeLoc, "element type for a struct must either "
+                         "be a TensorType or a StructType, got: ")
+                << elementType;
+            return Type();
+        }
+
+        elementTypes.push_back(elementType);
+    } while (succeeded(parser.parseOptionalComma()));
+
+    if (parser.parseGreater())
+        return Type();
+
+    return StructType::get(elementTypes);
+}
+
+
+// Print Type to .mlir file.
+void ToyDialect::printType(Type type, DialectAsmPrinter& printer) const {
+    StructType structType = llvm::cast<StructType>(type);
+
+    printer << "struct<";
+    llvm::interleaveComma(structType.getElementTypes(), printer);
+    printer << '>';
+}
 
 //===----------------------------------------------------------------------===//
 // Toy Operations
@@ -171,6 +236,63 @@ static void printBinaryOp(mlir::OpAsmPrinter& printer, mlir::Operation* op) {
 //===----------------------------------------------------------------------===//
 // ConstantOp
 //===----------------------------------------------------------------------===//
+llvm::LogicalResult
+verifyConstantForType(mlir::Type type, mlir::Attribute opaqueValue, mlir::Operation* op) {
+    if (llvm::isa<mlir::TensorType>(type)) {
+        auto attrValue = llvm::dyn_cast<mlir::DenseFPElementsAttr>(opaqueValue);
+        if (!attrValue) {
+            return op->emitError(
+                       "constant of TensorType must be initialized by "
+                       "a DenseFPElementsAttr, got: ")
+                   << opaqueValue;
+        }
+
+        auto resultType = llvm::dyn_cast<mlir::RankedTensorType>(type);
+        if (!resultType)
+            return llvm::success();
+
+        auto attrType = llvm::cast<mlir::RankedTensorType>(attrValue.getType());
+        if (attrType.getRank() != resultType.getRank()) {
+            return op->emitError(
+                       "return type must match the one of the attached "
+                       "value attribute: ")
+                   << attrType.getRank() << resultType.getRank();
+        }
+
+        for (int dim = 0, dimE = attrType.getRank(); dim < dimE; dim++) {
+            if (attrType.getShape()[dim] != resultType.getShape()[dim]) {
+                return op->emitOpError(
+                           "return type shape mismatches its attribute at dimension ")
+                       << dim << ":" << attrType.getShape()[dim]
+                       << "!= " << resultType.getShape()[dim];
+            }
+        }
+        return llvm::success();
+    }
+    else {
+        auto resultType = llvm::cast<StructType>(type);
+        auto resultElementTypes = resultType.getElementTypes();
+        auto attrValues = llvm::dyn_cast<ArrayAttr>(opaqueValue);
+
+        if (!attrValues || attrValues.size() != resultElementTypes.size()) {
+            return op->emitError(
+                       "constant of StructType must be initialized by an "
+                       "ArrayAttr with the same number of elements, got: ")
+                   << opaqueValue;
+        }
+
+        llvm::ArrayRef<Attribute> attrElementValues = attrValues.getValue();
+        for (const auto it : llvm::zip(resultElementTypes, attrElementValues)) {
+            if (llvm::failed(
+                    verifyConstantForType(std::get<0>(it), std::get<1>(it), op))) {
+                return llvm::failure();
+            }
+        }
+
+        return llvm::success();
+    }
+    return llvm::failure();
+}
 
 /// Build a constant operation.
 /// The builder is passed as an argument, so is the state that this method is
@@ -240,6 +362,9 @@ llvm::LogicalResult ConstantOp::verify() {
     return mlir::success();
 }
 
+void ConstantOp::inferShapes() {
+    getResult().setType(cast<TensorType>(getValue().getType()));
+}
 //===----------------------------------------------------------------------===//
 // AddOp
 //===----------------------------------------------------------------------===//
@@ -328,7 +453,7 @@ CallInterfaceCallable GenericCallOp::getCallableForCallee() {
 /// Set the callee for the generic call operation, this is required by the call
 /// interface.
 void GenericCallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
-    (*this)->setAttr("callee", callee.get<SymbolRefAttr>());
+    (*this)->setAttr("callee", cast<SymbolRefAttr>(callee));
 }
 
 /// Get the argument operands to the called function, this is required by the
@@ -453,6 +578,91 @@ bool CastOp::areCastCompatible(::mlir::TypeRange inputs, ::mlir::TypeRange outpu
 void CastOp::inferShapes() {
     getResult().setType(getInput().getType());
 }
+
+//===----------------------------------------------------------------------===//
+// StructAccessOp
+//===----------------------------------------------------------------------===//
+void StructAccessOp::build(
+    mlir::OpBuilder&      builder,
+    mlir::OperationState& state,
+    Value                 input,
+    size_t                index) {
+    auto structTy = llvm::cast<StructType>(input.getType());
+    assert(index < structTy.getNumElementTypes() && "Index out of range.");
+    mlir::Type resultTy = structTy.getElementTypes()[index];
+    build(builder, state, resultTy, input, builder.getI64IntegerAttr(index));
+}
+
+llvm::LogicalResult StructAccessOp::verify() {
+    auto   structTy = llvm::cast<StructType>(getInput().getType());
+    size_t indexValue = getIndex();
+    if (indexValue >= structTy.getNumElementTypes()) {
+        return emitOpError()
+               << "index should be within the range of the input struct type";
+    }
+
+    mlir::Type resultTy = getResult().getType();
+    if (resultTy != structTy.getElementTypes()[indexValue]) {
+        return emitOpError() << "must have the same result type as the struct "
+                                "element referred to by the index";
+    }
+
+    return llvm::success();
+}
+
+
+//===----------------------------------------------------------------------===//
+// Toy Struct Type
+//===----------------------------------------------------------------------===//
+llvm::LogicalResult StructConstantOp::verify() {
+    return verifyConstantForType(getResult().getType(), getValue(), *this);
+}
+
+
+//===----------------------------------------------------------------------===//
+// Toy Struct Type
+//===----------------------------------------------------------------------===//
+
+namespace mlir {
+namespace toy {
+namespace detail {
+struct StructTypeStorage : public mlir::TypeStorage {
+    using KeyTy = ArrayRef<Type>;
+    StructTypeStorage(ArrayRef<Type> elementTypes) : elementTypes(elementTypes) {}
+
+    bool operator==(const KeyTy& key) const {
+        return key == elementTypes;
+    }
+
+    static llvm::hash_code hashKey(const KeyTy& key) {
+        return llvm::hash_value(key);
+    }
+
+    static StructTypeStorage*
+    construct(mlir::TypeStorageAllocator& allocator, const KeyTy& key) {
+        llvm::ArrayRef<Type> elementTypes = allocator.copyInto(key);
+        return new (allocator.allocate<StructTypeStorage>())
+            StructTypeStorage(elementTypes);
+    }
+
+
+    ArrayRef<Type> elementTypes;
+};
+}  // namespace detail
+}  // namespace toy
+}  // namespace mlir
+
+StructType StructType::get(llvm::ArrayRef<Type> elementTypes) {
+    assert(!elementTypes.empty() && "expected at least 1 element type");
+
+    mlir::MLIRContext* ctx = elementTypes.front().getContext();
+    return Base::get(ctx, elementTypes);
+}
+
+ArrayRef<Type> StructType::getElementTypes() {
+    return getImpl()->elementTypes;
+}
+
 
 //===----------------------------------------------------------------------===//
 // TableGen'd op method definitions

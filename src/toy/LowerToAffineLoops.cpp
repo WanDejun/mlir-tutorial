@@ -192,7 +192,7 @@ struct ConstantOpLowering : public OpRewritePattern<toy::ConstantOp> {
         // store tensor value to memref.
         SmallVector<Value, 2>        indices;  // indices for element value in loops.
         auto                         valueIt = constantValue.value_begin<FloatAttr>();
-        function_ref<void(uint64_t)> storeElements = [&](uint64_t dimension) {
+        std::function<void(uint64_t)> storeElements = [&](uint64_t dimension) {
             if (dimension == valueShape.size()) {
                 auto valueToStore = rewriter.create<arith::ConstantOp>(loc, *valueIt++);
                 rewriter.create<affine::AffineStoreOp>(

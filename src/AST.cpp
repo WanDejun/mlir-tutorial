@@ -53,7 +53,10 @@ private:
     void dump(BinaryExprAST* node);
     void dump(CallExprAST* node);
     void dump(PrintExprAST* node);
+    void dump(StructLiteralExprAST* node);
     void dump(PrototypeAST* node);
+    void dump(RecordAST* expr);
+    void dump(StructAST* node);
     void dump(FunctionAST* node);
 
     // Actually print spaces matching the current indentation level
@@ -86,7 +89,7 @@ void ASTDumper::dump(ExprAST* expr) {
     llvm::TypeSwitch<ExprAST*>(expr)
         .Case<
             BinaryExprAST, CallExprAST, LiteralExprAST, NumberExprAST, PrintExprAST,
-            ReturnExprAST, VarDeclExprAST, VariableExprAST>(
+            ReturnExprAST, VarDeclExprAST, VariableExprAST, StructLiteralExprAST>(
             [&](auto* node) { this->dump(node); })
         .Default([&](ExprAST*) {
             // No match, fallback to a generic message
@@ -102,6 +105,9 @@ void ASTDumper::dump(VarDeclExprAST* varDecl) {
     llvm::errs() << "VarDecl " << varDecl->getName();
     dump(varDecl->getType());
     llvm::errs() << " " << loc(varDecl) << "\n";
+
+    if (varDecl->getInitVal() == nullptr)
+        return;
     dump(varDecl->getInitVal());
 }
 
@@ -203,8 +209,21 @@ void ASTDumper::dump(PrintExprAST* node) {
 /// Print type: only the shape is printed in between '<' and '>'
 void ASTDumper::dump(const VarType& type) {
     llvm::errs() << "<";
-    llvm::interleaveComma(type.shape, llvm::errs());
+    if (type.typeName == "tensor")
+        llvm::interleaveComma(type.shape, llvm::errs());
+    else
+        llvm::errs() << type.typeName;
     llvm::errs() << ">";
+}
+
+void ASTDumper::dump(StructLiteralExprAST* node) {
+    INDENT();
+    llvm::errs() << "{\n";
+    for (const std::unique_ptr<ExprAST>& var : node->getValues()) {
+        dump(var.get());
+    }
+    indent();
+    llvm::errs() << "}\n";
 }
 
 /// Print a function prototype, first the function name, and then the list of
@@ -219,6 +238,32 @@ void ASTDumper::dump(PrototypeAST* node) {
     llvm::errs() << "]\n";
 }
 
+
+/// Dispatch to a generic expressions to the appropriate subclass using RTTI
+void ASTDumper::dump(RecordAST* record) {
+    if (FunctionAST* functionAST = llvm::dyn_cast<FunctionAST>(record)) {
+        dump(functionAST);
+    }
+    else if (StructAST* structAST = llvm::dyn_cast<StructAST>(record)) {
+        dump(structAST);
+    }
+    else {
+        llvm::errs() << "<unknown Record, kind " << record->getKind() << ">\n";
+    }
+}
+
+void ASTDumper::dump(StructAST* node) {
+    INDENT();
+    llvm::errs() << node->getTypeName() << " {\n";
+
+    for (auto& var : node->getMembers()) {
+        dump(var.get());
+    }
+
+    indent();
+    llvm::errs() << "} // struct declare\n";
+}
+
 /// Print a function, first the prototype and then the body.
 void ASTDumper::dump(FunctionAST* node) {
     INDENT();
@@ -229,10 +274,9 @@ void ASTDumper::dump(FunctionAST* node) {
 
 /// Print a module, actually loop over the functions and print them in sequence.
 void ASTDumper::dump(ModuleAST* node) {
-    INDENT();
     llvm::errs() << "Module:\n";
     for (auto& f : *node)
-        dump(&f);
+        dump(f.get());
 }
 
 namespace toy {

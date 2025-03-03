@@ -53,7 +53,34 @@
 using namespace toy;
 namespace cl = llvm::cl;
 
-std::string inputFilename = "/home/mowind/dev/mlir/tutorial/test/test.toy";
+static cl::opt<std::string> inputFilename(
+    cl::Positional,
+    cl::desc("<input toy file>"),
+    cl::init("-"),
+    cl::value_desc("filename"));
+
+namespace {}  // namespace
+enum Action { None, DumpAST, DumpMLIR, DumpMLIRAffine, DumpMLIRLLVM, DumpLLVMIR, RunJIT };
+static cl::opt<enum Action> emitAction(
+    "emit",
+    cl::desc("Select the kind of output desired"),
+    cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
+    cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
+    cl::values(clEnumValN(
+        DumpMLIRAffine,
+        "mlir-affine",
+        "output the MLIR dump after affine lowering")),
+    cl::values(
+        clEnumValN(DumpMLIRLLVM, "mlir-llvm", "output the MLIR dump after llvm lowering")),
+    cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")),
+    cl::values(clEnumValN(
+        RunJIT,
+        "jit",
+        "JIT the code and run it by invoking the main function")));
+
+static cl::opt<bool> enableOpt("opt", cl::desc("Enable optimizations"));
+
+// std::string inputFilename = "/home/mowind/dev/mlir/tutorial/test/Ch7.toy";
 
 int dumpMLIR() {
     mlir::DialectRegistry registry;
@@ -77,9 +104,12 @@ int dumpMLIR() {
 
     auto module = mlirGen(context, *moduleAST);
 
+
     mlir::PassManager pm(module.get()->getName());
 
-    do {  // Inliner Passer
+    // Dump MLIR
+    if (emitAction >= DumpMLIRAffine || 1) {
+        // Inliner Passer
         pm.addPass(mlir::createInlinerPass());
 
         mlir::OpPassManager& optPM = pm.nest<mlir::toy::FuncOp>();
@@ -87,9 +117,10 @@ int dumpMLIR() {
         optPM.addPass(mlir::createCanonicalizerPass());
         // Common Subexpression Elimination.
         optPM.addPass(mlir::createCSEPass());
-    } while (0);
+    };
 
-    do {
+
+    if (emitAction >= DumpMLIRAffine) {
         // Partially lower the toy dialect.
         pm.addPass(mlir::toy::createLowerToAffinePass());
 
@@ -97,54 +128,42 @@ int dumpMLIR() {
         mlir::OpPassManager& optPM = pm.nest<mlir::func::FuncOp>();
         optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::createCSEPass());
-    } while (0);
+    };
 
-    do {
-        // lower to llvm.
+
+    // lower to llvm.
+    if (emitAction >= DumpLLVMIR) {
         pm.addPass(mlir::toy::createLowerToLLVMPass());
         pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
-    } while (0);
+    };
 
     if (mlir::failed(pm.run(*module)))
         return 4;
 
-    // do {
-    //     // Register the translation to LLVM IR with the MLIR context.
-    //     mlir::registerBuiltinDialectTranslation(*module->getContext());
-    //     mlir::registerLLVMDialectTranslation(*module->getContext());
-
-    //     // Convert the module to LLVM IR in a new LLVM IR context.
-    //     llvm::LLVMContext llvmContext;
-    //     auto llvmModule = mlir::translateModuleToLLVMIR(*module, llvmContext);
-    //     if (!llvmModule) {
-    //         llvm::errs() << "Failed to emit LLVM IR\n";
-    //         return -1;
-    //     }
-
-    //     // Initialize LLVM targets.
-    //     llvm::InitializeNativeTarget();
-    //     llvm::InitializeNativeTargetAsmPrinter();
-
-    //     // Configure the LLVM Module
-    //     auto tmBuilderOrError = llvm::orc::JITTargetMachineBuilder::detectHost();
-    //     if (!tmBuilderOrError) {
-    //         llvm::errs() << "Could not create JITTargetMachineBuilder\n";
-    //         return -1;
-    //     }
-
-    //     auto tmOrError = tmBuilderOrError->createTargetMachine();
-    //     if (!tmOrError) {
-    //         llvm::errs() << "Could not create TargetMachine\n";
-    //         return -1;
-    //     }
-    //     mlir::ExecutionEngine::setupTargetTripleAndDataLayout(
-    //         llvmModule.get(), tmOrError.get().get());
-
-    //     llvm::errs() << *llvmModule << "\n";
-    //     return 0;
-    // } while (0);
-
     module->dump();
+    return 0;
+}
+
+int dumpAST() {
+    mlir::DialectRegistry registry;
+    mlir::func::registerAllExtensions(registry);
+    mlir::LLVM::registerInlinerInterface(registry);
+
+    mlir::MLIRContext context(registry);
+    context.getOrLoadDialect<mlir::toy::ToyDialect>();
+
+    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
+        llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
+    if (std::error_code ec = fileOrErr.getError()) {
+        llvm::errs() << "Could not open input file: " << ec.message() << "\n";
+        return -1;
+    }
+    auto        buffer = fileOrErr.get()->getBuffer();
+    LexerBuffer lexer(buffer.begin(), buffer.end(), std::string(inputFilename));
+    Parser      parser(lexer);
+
+    std::unique_ptr<toy::ModuleAST> moduleAST = parser.parseModule();
+    dump(*moduleAST.get());
     return 0;
 }
 
@@ -156,7 +175,17 @@ int main(int argc, char** argv) {
 
     cl::ParseCommandLineOptions(argc, argv, "toy compiler\n");
 
-    return dumpMLIR();
-
-    return 0;
+    switch (emitAction) {
+    default:
+        llvm::errs() << "Illigal emit Acitons.";
+        return 1;
+    case DumpAST:
+        return dumpAST();
+    case DumpMLIR:
+    case DumpLLVMIR:
+    case DumpMLIRAffine:
+    case DumpMLIRLLVM:
+        dumpMLIR();
+        return 0;
+    }
 }
